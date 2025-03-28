@@ -3,15 +3,22 @@ name: Deploy Azure Function
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:  # يسمح بالتشغيل اليدوي
 
 env:
   AZURE_FUNCTIONAPP_NAME: 'azureimgproc'
   RESOURCE_GROUP: 'imgprocessorazure'
-  PYTHON_VERSION: '3.9'
+  PYTHON_VERSION: '3.11'  # تم الترقية إلى Python 3.11
+  STORAGE_ACCOUNT: 'mynewstorageacc'  # إضافة متغير جديد
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production  # تحديد البيئة
+    permissions:
+      contents: read
+      id-token: write  # مطلوب للمصادقة الحديثة
+
     steps:
       - uses: actions/checkout@v4
       
@@ -19,20 +26,32 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'  # تفعيل الكاش لتسريع العملية
           
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --target="./.python_packages/lib/site-packages" -r requirements.txt
           
       - name: Login to Azure
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           
-      - name: Deploy
-        uses: Azure/functions-action@v1
+      - name: Create storage containers
+        run: |
+          az storage container create --name uploads --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
+          az storage container create --name processed --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
+          
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v2  # تم الترقية إلى v2
         with:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           package: function_app/
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          scm-do-build-during-deployment: true  # تفعيل البناء أثناء النشر
+          enable-oryx-build: true  # تحسين عملية البناء
+
+      - name: Verify deployment
+        run: |
+          curl -s https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/healthcheck | jq
