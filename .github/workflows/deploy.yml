@@ -17,7 +17,7 @@ jobs:
     environment: production
     permissions:
       contents: read
-      id-token: write
+      id-token: write  # ضروري لمصادقة OIDC
 
     steps:
       - name: Checkout code
@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
+          cache: 'pip'  # تفعيل الذاكرة المؤقتة لتسريع التثبيت
 
       - name: Install dependencies
         run: |
@@ -37,17 +37,27 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Run Azure Functions action
+      - name: Create storage containers
+        run: |
+          az storage container create --name uploads --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
+          az storage container create --name processed --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
+
+      - name: Deploy to Function App
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           package: function_app/
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-          enable-oryx-build: true
           scm-do-build-during-deployment: true
+          enable-oryx-build: true
 
       - name: Verify deployment
         run: |
-          echo "Deployment to ${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net completed"
+          echo "Deployment successful!"
+          echo "Function App URL: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net"
+          curl -s https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/healthcheck | jq
